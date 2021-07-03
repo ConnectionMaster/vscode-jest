@@ -12,9 +12,8 @@ import * as vscode from 'vscode';
 describe('DebugCodeLens', () => {
   const document = {} as any;
   const range = {} as any;
-  const fileName = 'file.js';
   const testName = 'should specify the test file name';
-  const sut = new DebugCodeLens(document, range, fileName, testName);
+  const sut = new DebugCodeLens(document, range, testName);
 
   it('should extend vscode.CodeLens', () => {
     expect(sut).toBeInstanceOf(vscode.CodeLens);
@@ -24,11 +23,7 @@ describe('DebugCodeLens', () => {
     expect(sut.document).toBe(document);
   });
 
-  it('should specify the file name', () => {
-    expect(sut.fileName).toBe(fileName);
-  });
-
   it('should specify the test name', () => {
-    expect(sut.testName).toBe(testName);
+    expect(sut.testIds).toEqual([testName]);
   });
 });

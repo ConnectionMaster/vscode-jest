@@ -29,11 +29,16 @@ import {
   nodeBinExtension,
   cleanAnsi,
   prepareIconFile,
-  getJestCommandSettings,
-  pathToConfig,
+  testIdString,
+  escapeRegExp,
+  removeSurroundingQuote,
+  toFilePath,
+  toLowerCaseDriveLetter,
+  toUpperCaseDriveLetter,
 } from '../src/helpers';
 
 // Manually (forcefully) set the executable's file extension to test its addition independendly of the operating system.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 (nodeBinExtension as string) = '.TEST';
 
 describe('ModuleHelpers', () => {
@@ -42,12 +47,14 @@ describe('ModuleHelpers', () => {
     it('should return an empty string on Linux', () => {
       jest.resetModules();
       mockPlatform.mockReturnValueOnce('linux');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       expect(require('../src/helpers').nodeBinExtension).toBe('');
     });
 
     it('should equal ".cmd" on Windows', () => {
       jest.resetModules();
       mockPlatform.mockReturnValueOnce('win32');
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
       expect(require('../src/helpers').nodeBinExtension).toBe('.cmd');
     });
   });
@@ -205,25 +212,83 @@ describe('ModuleHelpers', () => {
       expect((mockWriteFileSync as jest.Mock).mock.calls[2][1]).toBe('<svg fill="red"></svg>');
     });
   });
-  describe('getJestCommandSettings', () => {
-    it('without jestCommandLine, returns pathToJest and pathToConfig', () => {
-      const settings: any = {
-        pathToJest: 'abc',
-        pathToConfig: 'whatever',
-        rootPath: '',
-      };
-      expect(getJestCommandSettings(settings)).toEqual([
-        pathToJest(settings),
-        pathToConfig(settings),
-      ]);
-    });
-    it('with jestCommandLine, ignore both pathToJest and pathToConfig', () => {
-      const settings: any = {
-        jestCommandLine: 'jest --coverage',
-        pathToJest: 'abc',
-        pathToConfig: 'whatever',
-      };
-      expect(getJestCommandSettings(settings)).toEqual([settings.jestCommandLine, undefined]);
-    });
+});
+
+describe('escapeRegExp', () => {
+  it.each`
+    str                    | expected
+    ${'no special char'}   | ${'no special char'}
+    ${'with (a)'}          | ${'with \\(a\\)'}
+    ${'with {} and $sign'} | ${'with \\{\\} and \\$sign'}
+    ${'with []'}           | ${'with \\[\\]'}
+  `('escapeRegExp: $str', ({ str, expected }) => {
+    expect(escapeRegExp(str)).toEqual(expected);
+  });
+});
+describe('testIdString', () => {
+  it.each`
+    type                 | id                                                            | expected
+    ${'display'}         | ${{ title: 'test', ancestorTitles: [] }}                      | ${'test'}
+    ${'display-reverse'} | ${{ title: 'test', ancestorTitles: [] }}                      | ${'test'}
+    ${'full-name'}       | ${{ title: 'test', ancestorTitles: [] }}                      | ${'test'}
+    ${'display'}         | ${{ title: 'regexp (a) $x/y', ancestorTitles: [] }}           | ${'regexp (a) $x/y'}
+    ${'display-reverse'} | ${{ title: 'regexp (a) $x/y', ancestorTitles: [] }}           | ${'regexp (a) $x/y'}
+    ${'full-name'}       | ${{ title: 'regexp (a) $x/y', ancestorTitles: [] }}           | ${'regexp (a) $x/y'}
+    ${'display'}         | ${{ title: 'test', ancestorTitles: ['d-1', 'd-1-1'] }}        | ${'d-1 > d-1-1 > test'}
+    ${'display-reverse'} | ${{ title: 'test', ancestorTitles: ['d-1', 'd-1-1'] }}        | ${'test < d-1-1 < d-1'}
+    ${'full-name'}       | ${{ title: 'test', ancestorTitles: ['d-1', 'd-1-1'] }}        | ${'d-1 d-1-1 test'}
+    ${'full-name'}       | ${{ title: 'regexp ($a)', ancestorTitles: ['d-1', 'd-1-1'] }} | ${'d-1 d-1-1 regexp ($a)'}
+  `('$type: $expected', ({ type, id, expected }) => {
+    expect(testIdString(type, id)).toEqual(expected);
+  });
+});
+
+describe('removeSurroundingQuote', () => {
+  it.each`
+    str                          | expected
+    ${'no quote'}                | ${'no quote'}
+    ${'"double quote"'}          | ${'double quote'}
+    ${"'single quote'"}          | ${'single quote'}
+    ${"''single single quote''"} | ${'single single quote'}
+  `('can remove surrounding quotes from $str', ({ str, expected }) => {
+    expect(removeSurroundingQuote(str)).toEqual(expected);
+  });
+});
+
+describe('toFilePath', () => {
+  it.each`
+    path                | expected
+    ${'/a/b/c'}         | ${'/a/b/c'}
+    ${'C:/a/b/c.js'}    | ${'C:/a/b/c.js'}
+    ${'c:/a/b/c.js'}    | ${'c:/a/b/c.js'}
+    ${'z:\\a\\b\\c.js'} | ${'Z:\\a\\b\\c.js'}
+    ${'\\a\\b\\c.js'}   | ${'\\a\\b\\c.js'}
+    ${''}               | ${''}
+  `('escape $path => $expected', ({ path, expected }) => {
+    expect(toFilePath(path)).toEqual(expected);
+  });
+});
+
+describe('toLowerCaseDriveLetter', () => {
+  it.each`
+    filePath                | expected
+    ${'C:\\path\\file.ext'} | ${'c:\\path\\file.ext'}
+    ${'c:\\path\\file.ext'} | ${undefined}
+    ${'c:/path/file.ext'}   | ${undefined}
+    ${'/path/file.ext'}     | ${undefined}
+  `('$filePath => $expected', ({ filePath, expected }) => {
+    expect(toLowerCaseDriveLetter(filePath)).toBe(expected);
+  });
+});
+
+describe('toUpperCaseDriveLetter', () => {
+  it.each`
+    filePath                | expected
+    ${'C:\\path\\file.ext'} | ${undefined}
+    ${'c:\\path\\file.ext'} | ${'C:\\path\\file.ext'}
+    ${'c:/path/file.ext'}   | ${undefined}
+    ${'/path/file.ext'}     | ${undefined}
+  `('$filePath => $expected', ({ filePath, expected }) => {
+    expect(toUpperCaseDriveLetter(filePath)).toBe(expected);
   });
 });

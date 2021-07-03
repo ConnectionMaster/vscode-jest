@@ -1,9 +1,17 @@
-export type TestReconciliationState = 'Unknown' | 'KnownSuccess' | 'KnownFail' | 'KnownSkip';
+export type TestReconciliationStateType =
+  | 'Unknown'
+  | 'KnownSuccess'
+  | 'KnownFail'
+  | 'KnownSkip'
+  | 'KnownTodo';
 
 // tslint:disable-next-line variable-name
-export const TestReconciliationState = {
-  Unknown: 'Unknown' as TestReconciliationState,
-  KnownSuccess: 'KnownSuccess' as TestReconciliationState,
-  KnownFail: 'KnownFail' as TestReconciliationState,
-  KnownSkip: 'KnownSkip' as TestReconciliationState,
+export const TestReconciliationState: {
+  [key in TestReconciliationStateType]: TestReconciliationStateType;
+} = {
+  Unknown: 'Unknown',
+  KnownSuccess: 'KnownSuccess',
+  KnownFail: 'KnownFail',
+  KnownSkip: 'KnownSkip',
+  KnownTodo: 'KnownTodo',
 };

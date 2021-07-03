@@ -1,7 +1,11 @@
 /* istanbul ignore file */
 import { Location, LocationRange, TestResult } from '../src/TestResults/TestResult';
-import { TestReconciliationState } from '../src/TestResults';
+import { TestReconciliationStateType } from '../src/TestResults';
 import { ItBlock, TestAssertionStatus } from 'jest-editor-support';
+import { JestProcessRequest } from '../src/JestProcessManagement';
+import { JestTestProcessType } from '../src/Settings';
+import { AutoRunAccessor } from '../src/JestExt';
+import { MatchEvent } from '../src/TestResults/match-node';
 
 export const EmptyLocation = {
   line: 0,
@@ -34,18 +38,29 @@ export const findResultForTest = (results: TestResult[], itBlock: ItBlock): Test
 };
 
 // factory method
-export const makeItBlock = (name?: string, pos?: [number, number, number, number]): any => {
+export const makeItBlock = (
+  name?: string,
+  pos?: [number, number, number, number],
+  override?: Partial<ItBlock>
+): any => {
   const loc = pos ? makePositionRange(pos) : EmptyLocationRange;
   return {
     type: 'it',
     name,
+    nameType: 'Literal',
     ...loc,
+    ...(override ?? {}),
   };
 };
-export const makeDescribeBlock = (name: string, itBlocks: any[]): any => ({
+export const makeDescribeBlock = (
+  name: string,
+  itBlocks: any[],
+  override?: Partial<ItBlock>
+): any => ({
   type: 'describe',
   name,
   children: itBlocks,
+  ...(override ?? {}),
 });
 export const makeRoot = (children: any[]): any => ({
   type: 'root',
@@ -53,7 +68,7 @@ export const makeRoot = (children: any[]): any => ({
 });
 export const makeAssertion = (
   title: string,
-  status: TestReconciliationState,
+  status: TestReconciliationStateType,
   ancestorTitles: string[] = [],
   location?: [number, number],
   override?: Partial<TestAssertionStatus>
@@ -66,3 +81,134 @@ export const makeAssertion = (
     location: location ? makeLocation(location) : EmptyLocation,
     ...(override || {}),
   } as TestAssertionStatus);
+
+export const makeTestResult = (
+  title: string,
+  status: TestReconciliationStateType,
+  ancestorTitles: string[] = [],
+  range?: [number, number, number, number],
+  override?: Partial<TestResult>
+): TestResult => ({
+  name: [...ancestorTitles, title].join(' '),
+  status,
+  identifier: {
+    title,
+    ancestorTitles,
+  },
+  ...(range ? makePositionRange(range) : EmptyLocationRange),
+  ...(override || {}),
+});
+
+export const mockProcessRequest = (
+  type: JestTestProcessType,
+  override?: Partial<JestProcessRequest>
+): any /*JestProcessRequest */ => {
+  return {
+    type,
+    schedule: { queue: 'blocking' },
+    listener: jest.fn(),
+    ...(override || {}),
+  };
+};
+
+export const mockProjectWorkspace = (...args: any[]): any => {
+  const [
+    rootPath,
+    jestCommandLine,
+    pathToConfig,
+    localJestMajorVersion,
+    outputFileSuffix,
+    collectCoverage,
+    debug,
+    nodeEnv,
+  ] = args;
+  return {
+    rootPath,
+    jestCommandLine,
+    pathToConfig,
+    localJestMajorVersion,
+    outputFileSuffix,
+    collectCoverage,
+    debug,
+    nodeEnv,
+  };
+};
+
+export const mockWworkspaceLogging = (): any => ({ create: () => jest.fn() });
+
+export const mockJestExtContext = (autoRun?: AutoRunAccessor): any => {
+  return {
+    workspace: jest.fn(),
+    runnerWorkspace: jest.fn(),
+    settings: jest.fn(),
+    loggingFactory: { create: jest.fn(() => jest.fn()) },
+    autoRun: autoRun ?? jest.fn(),
+  };
+};
+
+export const mockJestProcessContext = (): any => {
+  return {
+    ...mockJestExtContext(),
+    output: { appendLine: jest.fn(), clear: jest.fn() },
+    updateStatusBar: jest.fn(),
+    updateWithData: jest.fn(),
+  };
+};
+
+// custom matcher to test matchResults
+type ResultRecord = [string, number, TestReconciliationStateType, MatchEvent[]];
+const allHistory = (m: TestResult) => [...m.sourceHistory, ...(m.assertionHistory ?? [])];
+export const toTestResultRecord = (m: TestResult): ResultRecord => [
+  m.name,
+  m.start.line,
+  m.status,
+  allHistory(m),
+];
+expect.extend({
+  toMatchTestResults(receivedList, expectedList) {
+    const isMatched = (actual, expected) => {
+      const [name, start, status, events] = actual;
+      const [expName, expStart, expStatus, expEvents] = expected;
+      return (
+        name === expName &&
+        start === expStart &&
+        status === expStatus &&
+        expEvents.every((e) => events.includes(e))
+      );
+    };
+
+    const pass =
+      receivedList.length === expectedList.length &&
+      receivedList.every(
+        (actual) => expectedList.find((expected) => isMatched(actual, expected)) != null
+      );
+
+    const buildMessage = (prefix: string) =>
+      [
+        prefix,
+        `expect ${expectedList.length} records, received: ${receivedList.length} records`,
+        `expected: ${JSON.stringify(expectedList)}`,
+        `received: ${JSON.stringify(receivedList)}`,
+      ].join('\n');
+    if (pass) {
+      return {
+        message: () => buildMessage('TestResults Matched'),
+        pass: true,
+      };
+    } else {
+      return {
+        message: () => buildMessage('TestResults does not match'),
+        pass: false,
+      };
+    }
+  },
+});
+
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace jest {
+    interface Matchers<R> {
+      toMatchTestResults(records: ResultRecord[]): R;
+    }
+  }
+}
